@@ -30,7 +30,7 @@
  *                           与“单级恒定偏差”假设不符。
  */
 
-const { makeFrac, parseDecimal, MIN_TEETH, MAX_TEETH } = require('./search');
+const { makeFrac, parseDecimal, numberToFrac, MIN_TEETH, MAX_TEETH } = require('./search');
 
 /** 级数 / 观测次数范围 */
 const MIN_STAGES = 1;
@@ -86,23 +86,27 @@ function parsePositiveInt(raw, label, max) {
 
 /**
  * 解析非负 / 正的十进制数量（转数、绝对误差）：接受有限 JSON number 或
- * 十进制字符串（不接受科学计数法），返回精确分数。
+ * 十进制字符串。JSON number 按其十进制写法（含科学计数法，如 1e-7）
+ * 精确构造约分分数；字符串仅接受十进制小数（不接受科学计数法 / 分数）。
  * @returns {{ok:true,frac:object}|{ok:false,error:string}}
  */
 function parseAmount(raw, label, { positive }) {
-  let s;
+  let frac;
+  let display;
   if (typeof raw === 'number') {
-    if (!Number.isFinite(raw)) return { ok: false, error: `${label}需为有限数值` };
-    s = String(raw);
+    frac = numberToFrac(raw);
+    if (!frac) return { ok: false, error: `${label}需为有限数值` };
+    display = String(raw);
   } else if (typeof raw === 'string') {
-    s = raw.trim();
+    const s = raw.trim();
+    frac = parseDecimal(s);
+    display = s;
+    if (!frac) return { ok: false, error: `${label}格式不正确：请输入十进制数值（如 3600、12.5）` };
   } else {
     return { ok: false, error: `${label}需为正数（可带小数）` };
   }
-  const frac = parseDecimal(s);
-  if (!frac) return { ok: false, error: `${label}格式不正确：请输入十进制数值（如 3600、12.5）` };
   if (positive ? frac.num <= 0n : frac.num < 0n) {
-    return { ok: false, error: positive ? `${label}必须为正数（当前为 ${s}）` : `${label}不能为负数（当前为 ${s}）` };
+    return { ok: false, error: positive ? `${label}必须为正数（当前为 ${display}）` : `${label}不能为负数（当前为 ${display}）` };
   }
   if (frac.num > MAX_AMOUNT * frac.den) {
     return { ok: false, error: `${label}不能超过 10¹²` };

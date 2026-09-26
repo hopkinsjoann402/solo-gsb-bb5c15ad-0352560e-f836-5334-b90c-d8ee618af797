@@ -28,7 +28,7 @@
  * （R=0 表示 0 圈本已在零位，但“再转”必须为正，取周期 M）。
  */
 
-const { makeFrac, parseDecimal, MIN_TEETH, MAX_TEETH } = require('./search');
+const { makeFrac, parseDecimal, numberToFrac, MIN_TEETH, MAX_TEETH } = require('./search');
 
 /** 级数范围 / 相位约分后分母上限（10¹²） */
 const MIN_STAGES = 1;
@@ -87,42 +87,45 @@ function parsePositiveInt(raw, label, max) {
 }
 
 /**
- * 解析初始标记相位：接受 JSON number 或字符串；字符串支持分数 p/q
- * （p、q 为非负整数，q ≥ 1）或十进制小数；必须满足 0 ≤ 相位 < 1，
+ * 解析初始标记相位：接受 JSON number 或字符串。JSON number 按其十进制写法
+ * （含科学计数法，如 1e-7）精确构造约分分数；字符串支持分数 p/q
+ * （p、q 为非负整数，q ≥ 1）或十进制小数。必须满足 0 ≤ 相位 < 1，
  * 约分后分母 ≤ 10¹²。
  * @returns {{ok:true,frac:object}|{ok:false,error:string}}
  */
 function parsePhase(raw, label) {
-  let s;
+  let frac;
   if (typeof raw === 'number') {
-    if (!Number.isFinite(raw)) return { ok: false, error: `${label}需为有限数值` };
-    s = String(raw);
+    frac = numberToFrac(raw);
+    if (!frac) return { ok: false, error: `${label}需为有限数值` };
   } else if (typeof raw === 'string') {
-    s = raw.trim();
+    const s = raw.trim();
+    if (!s) return { ok: false, error: `${label}不能为空（零位请填 0）` };
+
+    if (s.includes('/')) {
+      const parts = s.split('/');
+      if (parts.length !== 2 || !/^\d+$/.test(parts[0].trim()) || !/^\d+$/.test(parts[1].trim())) {
+        return { ok: false, error: `${label}格式不正确：分数写法为 p/q（p、q 为非负整数，如 1/3）` };
+      }
+      const p = BigInt(parts[0].trim());
+      const q = BigInt(parts[1].trim());
+      if (q < 1n) return { ok: false, error: `${label}的分母需为正整数（当前 ${s}）` };
+      if (p >= q) return { ok: false, error: `${label}需满足 0 ≤ p/q < 1（当前 ${s}）` };
+      frac = makeFrac(p, q);
+    } else {
+      frac = parseDecimal(s);
+      if (!frac) {
+        return { ok: false, error: `${label}格式不正确：请填分数 p/q（如 1/3）或小数（如 0.5）` };
+      }
+      if (frac.num < 0n || frac.num >= frac.den) {
+        return { ok: false, error: `${label}需满足 0 ≤ 相位 < 1（当前 ${s}）` };
+      }
+    }
   } else {
     return { ok: false, error: `${label}格式不正确：请填分数 p/q（如 1/3）或小数（如 0.5）` };
   }
-  if (!s) return { ok: false, error: `${label}不能为空（零位请填 0）` };
-
-  let frac;
-  if (s.includes('/')) {
-    const parts = s.split('/');
-    if (parts.length !== 2 || !/^\d+$/.test(parts[0].trim()) || !/^\d+$/.test(parts[1].trim())) {
-      return { ok: false, error: `${label}格式不正确：分数写法为 p/q（p、q 为非负整数，如 1/3）` };
-    }
-    const p = BigInt(parts[0].trim());
-    const q = BigInt(parts[1].trim());
-    if (q < 1n) return { ok: false, error: `${label}的分母需为正整数（当前 ${s}）` };
-    if (p >= q) return { ok: false, error: `${label}需满足 0 ≤ p/q < 1（当前 ${s}）` };
-    frac = makeFrac(p, q);
-  } else {
-    frac = parseDecimal(s);
-    if (!frac) {
-      return { ok: false, error: `${label}格式不正确：请填分数 p/q（如 1/3）或小数（如 0.5）` };
-    }
-    if (frac.num < 0n || frac.num >= frac.den) {
-      return { ok: false, error: `${label}需满足 0 ≤ 相位 < 1（当前 ${s}）` };
-    }
+  if (frac.num < 0n || frac.num >= frac.den) {
+    return { ok: false, error: `${label}需满足 0 ≤ 相位 < 1` };
   }
   if (frac.den > MAX_PHASE_DEN) {
     return { ok: false, error: `${label}约分后的分母不能超过 10¹²` };
