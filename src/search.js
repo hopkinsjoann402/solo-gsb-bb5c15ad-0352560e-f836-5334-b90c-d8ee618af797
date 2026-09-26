@@ -55,6 +55,30 @@ function parseDecimal(raw) {
 }
 
 /**
+ * 将有限 JSON number 精确转换为约分分数。
+ *
+ * Number 字符串化可能是普通十进制（如 0.125、12），也可能是科学计数法
+ * （如 1e-7、1.5e+21）；科学计数法按十进制位移构造 BigInt 分子 / 分母后约分，
+ * 与等值的普通小数字符串（parseDecimal）得到同一分数。
+ * 仅供 JSON number 入参使用——字符串入参仍只接受普通小数或分数写法。
+ *
+ * @param {*} value 有限 JSON number
+ * @returns {{num:bigint,den:bigint}|null} 非 number 或非有限数值时返回 null
+ */
+function fracFromNumber(value) {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return null;
+  const m = /^([+-]?)(\d+)(?:\.(\d+))?(?:[eE]([+-]?\d+))?$/.exec(String(value));
+  if (!m) return null;
+  const sign = m[1] === '-' ? -1n : 1n;
+  const digits = m[2] + (m[3] || '');
+  // 数值 = 数字串 × 10^（指数 − 小数位数）
+  const shift = (m[4] ? BigInt(m[4]) : 0n) - BigInt((m[3] || '').length);
+  const num = BigInt(digits) * sign;
+  if (num === 0n) return { num: 0n, den: 1n };
+  return shift >= 0n ? makeFrac(num * 10n ** shift, 1n) : makeFrac(num, 10n ** -shift);
+}
+
+/**
  * 解析目标转速比：支持小数（12、12.5、0.0833）或形如 1/12 的分数。
  * 必须为正数。
  */
@@ -366,6 +390,7 @@ module.exports = {
   naturalCmp,
   makeFrac,
   parseDecimal,
+  fracFromNumber,
   parseTarget,
   parseTolerance,
   validateGears,
